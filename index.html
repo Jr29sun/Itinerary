@@ -69,13 +69,18 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .td{display:flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:8px}
 .td span{flex:1}.td.done span{text-decoration:line-through;opacity:.55}
 .td button{color:var(--warn)}
+.wr{display:grid;grid-template-columns:92px 1fr auto;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.wr.trip{border-color:var(--accent)}
+.wr em{display:inline-block;margin-top:2px;font-style:normal;font-size:11px;line-height:1.5;background:var(--accent);color:var(--accent-ink);border-radius:4px;padding:0 6px}
+.wi{font-size:15px}.ws{font-size:13px;color:var(--sub);text-align:right;line-height:1.5}
+.wxl{margin:0 0 12px;font-size:14px}
 </style>
 </head>
 <body>
 <main>
 <h1>开封五日</h1>
 <p class="lead">10.2 周五 17:00 抵达 → 10.6 周二 14:00 结束。行程由组织者统一更新,点「刷新行程」看最新版;打卡勾选保存在本机。</p>
-<div class="nav" id="nav"><button data-v="plan" aria-selected="true">行程</button><button data-v="map" aria-selected="false">地图</button><button data-v="todo" aria-selected="false">待办</button></div>
+<div class="nav" id="nav"><button data-v="plan" aria-selected="true">行程</button><button data-v="map" aria-selected="false">地图</button><button data-v="todo" aria-selected="false">待办</button><button data-v="wx" aria-selected="false">天气</button></div>
 <section id="v-plan">
 <div class="tabs" id="tabs" role="tablist"></div>
 <div id="day"><p class="theme">行程加载中…</p></div>
@@ -103,6 +108,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 <p class="theme" id="tdc"></p>
 <div class="addrow"><input type="text" id="tdin" placeholder="添加待办,回车确认"><button id="tdadd">添加</button></div>
 <div id="tdl"></div>
+</section>
+<section id="v-wx" hidden>
+<h2>开封天气</h2>
+<p class="theme" id="wxm">加载中…</p>
+<div id="wxl2"></div>
+<button class="add" id="wxbtn" style="border-style:solid">刷新天气</button>
+<p class="theme">预报来自 Open-Meteo,仅供参考,出发前请再看一次最新天气。带「行程」标记的是你的出行日期。</p>
 </section>
 </main>
 <div class="bar">
@@ -132,7 +144,7 @@ function render(){
  document.getElementById("tabs").innerHTML=data.map(function(x,k){var p=x.d.split(" ");return '<button role="tab" data-tab="'+k+'" aria-selected="'+(k===cur)+'"><b>'+esc(p[0])+'</b>'+esc(p[1]||x.s)+'</button>'}).join("");
  var D=data[cur];
  if(D){
-  var h='<h2>'+esc(D.h)+'</h2><p class="theme">'+esc(D.d)+' · '+esc(D.s)+(UP?' · '+esc(UP):'')+'</p><ol>';
+  var h='<h2>'+esc(D.h)+'</h2><p class="theme">'+esc(D.d)+' · '+esc(D.s)+(UP?' · '+esc(UP):'')+'</p>'+wxLine(D)+'<ol>';
   D.i.forEach(function(it,k){var dn=done[K(D,it)];
    h+='<li class="'+(dn?"done":"")+'" data-k="'+k+'"><div class="row"><span class="t">'+esc(it[0])+'</span><span class="n">'+esc(it[1])+'</span><input class="chk" type="checkbox" data-a="chk" '+(dn?"checked":"")+' aria-label="已完成"></div>'+(it[2]?'<div class="d">'+esc(it[2])+'</div>':"")+'</li>'});
   document.getElementById("day").innerHTML=h+'</ol>';
@@ -190,14 +202,48 @@ function addTodo(){var i=document.getElementById("tdin"),v=i.value.trim();if(!v)
 document.getElementById("tdadd").onclick=addTodo;
 document.getElementById("tdin").onkeydown=function(e){if(e.key==="Enter")addTodo()};
 function show(v){
- ["plan","map","todo"].forEach(function(x){document.getElementById("v-"+x).hidden=x!==v});
+ ["plan","map","todo","wx"].forEach(function(x){document.getElementById("v-"+x).hidden=x!==v});
  document.querySelectorAll("#nav button").forEach(function(b){b.setAttribute("aria-selected",b.dataset.v===v)});
  document.querySelector(".bar").style.display=v==="plan"?"":"none";
- if(v==="map")renderMap();if(v==="todo")renderTodo();window.scrollTo(0,0);
+ if(v==="map")renderMap();if(v==="todo")renderTodo();if(v==="wx")renderWx();window.scrollTo(0,0);
 }
 document.getElementById("nav").onclick=function(e){var b=e.target.closest("[data-v]");if(b)show(b.dataset.v)};
 try{var c0=JSON.parse(localStorage.getItem(CK));if(c0&&Array.isArray(c0.days)&&c0.days.length){setData(c0);render()}}catch(e){}
-load(false);
+var WX=null,WK="kf-wx";
+function nk(d){var m=String(d).match(/(\d+)\.(\d+)/);return m?("0"+m[1]).slice(-2)+"-"+("0"+m[2]).slice(-2):""}
+function wxD(c){var t=[[0,"晴","☀️"],[1,"大部晴朗","🌤️"],[2,"多云","⛅"],[3,"阴","☁️"],[45,"雾","🌫️"],[48,"雾","🌫️"],[51,"小毛毛雨","🌦️"],[53,"毛毛雨","🌦️"],[55,"较大毛毛雨","🌦️"],[56,"冻毛毛雨","🌦️"],[57,"冻毛毛雨","🌦️"],[61,"小雨","🌧️"],[63,"中雨","🌧️"],[65,"大雨","🌧️"],[66,"冻雨","🌧️"],[67,"冻雨","🌧️"],[71,"小雪","❄️"],[73,"中雪","❄️"],[75,"大雪","❄️"],[77,"雪粒","❄️"],[80,"小阵雨","🌦️"],[81,"阵雨","🌦️"],[82,"强阵雨","⛈️"],[85,"阵雪","❄️"],[86,"强阵雪","❄️"],[95,"雷暴","⛈️"],[96,"雷暴冰雹","⛈️"],[99,"强雷暴冰雹","⛈️"]];for(var i=0;i<t.length;i++)if(t[i][0]===c)return t[i];return[c,"天气未知","❔"]}
+function wxLine(D){
+ if(!WX)return "";
+ var k=nk(D.d),x=null;WX.l.forEach(function(y){if(y.k===k)x=y});
+ if(!x)return "";
+ var w=wxD(x.c);
+ return '<p class="wxl">'+w[2]+' '+w[1]+' · '+x.lo+'~'+x.hi+'°C'+(x.p!=null?' · 降水概率 '+x.p+'%'+(x.p>=50?' · 记得带伞':''):'')+'</p>';
+}
+function renderWx(){
+ var m=document.getElementById("wxm"),b=document.getElementById("wxl2");
+ if(!WX){m.textContent="暂时没有天气数据,请点「刷新天气」。";b.innerHTML="";return}
+ var tk={};data.forEach(function(D){tk[nk(D.d)]=1});
+ b.innerHTML=WX.l.map(function(x){
+  var w=wxD(x.c),dt=new Date(x.dt+"T00:00:00"),wd="日一二三四五六".charAt(dt.getDay());
+  return '<div class="wr'+(tk[x.k]?" trip":"")+'"><div><b>'+(+x.k.slice(0,2))+'.'+(+x.k.slice(3))+' 周'+wd+'</b>'+(tk[x.k]?'<br><em>行程</em>':'')+'</div><div class="wi">'+w[2]+' '+w[1]+'</div><div class="ws">'+x.lo+'~'+x.hi+'°C<br>'+(x.p!=null?'降水 '+x.p+'% · ':'')+'风 '+x.w+'km/h</div></div>';
+ }).join("");
+ m.textContent="更新于 "+new Date(WX.t).toLocaleString("zh-CN",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false});
+}
+function loadWx(manual){
+ var u="https://api.open-meteo.com/v1/forecast?latitude=34.797&longitude=114.307&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max&timezone=Asia%2FShanghai&forecast_days=7";
+ fetch(u).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){
+  var d=j.daily,L=[];
+  for(var i=0;i<d.time.length;i++)L.push({k:d.time[i].slice(5),dt:d.time[i],c:d.weather_code[i],hi:Math.round(d.temperature_2m_max[i]),lo:Math.round(d.temperature_2m_min[i]),p:d.precipitation_probability_max[i],w:Math.round(d.wind_speed_10m_max[i])});
+  WX={t:Date.now(),l:L};try{localStorage.setItem(WK,JSON.stringify(WX))}catch(e){}
+  render();renderWx();if(manual)toast("天气已更新");
+ }).catch(function(){
+  if(!WX)document.getElementById("wxm").textContent="天气加载失败,请检查网络后点「刷新天气」。";
+  else if(manual)toast("刷新失败,显示的是上次的天气");
+ });
+}
+document.getElementById("wxbtn").onclick=function(){loadWx(true)};
+try{var w0=JSON.parse(localStorage.getItem(WK));if(w0&&Array.isArray(w0.l)&&w0.l.length){WX=w0;render();renderWx()}}catch(e){}
+load(false);loadWx(false);
 </script>
 </body>
 </html>
