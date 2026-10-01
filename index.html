@@ -74,11 +74,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 <body>
 <main>
 <h1>开封五日</h1>
-<p class="lead">10.2 周五 17:00 抵达 → 10.6 周二 14:00 结束。点底部「编辑行程」可随时改动,自动保存在本机。</p>
+<p class="lead">10.2 周五 17:00 抵达 → 10.6 周二 14:00 结束。行程由组织者统一更新,点「刷新行程」看最新版;打卡勾选保存在本机。</p>
 <div class="nav" id="nav"><button data-v="plan" aria-selected="true">行程</button><button data-v="map" aria-selected="false">地图</button><button data-v="todo" aria-selected="false">待办</button></div>
 <section id="v-plan">
 <div class="tabs" id="tabs" role="tablist"></div>
-<div id="day"></div>
+<div id="day"><p class="theme">行程加载中…</p></div>
 <div class="tips"><b>国庆提醒</b><ul>
 <li>清明上河园、开封府、大相国寺提前线上订票</li>
 <li>热门演出先看当天时间表</li>
@@ -106,88 +106,55 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 </section>
 </main>
 <div class="bar">
-<button id="edit">编辑行程</button>
+<button id="refresh">刷新行程</button>
 <button id="copy">复制全文</button>
-<button id="reset">恢复原版</button>
 </div>
 <div class="toast" id="toast"></div>
 <script>
-var DEF=[
-{d:"10.2 周五",s:"傍晚抵达",h:"抵达与夜市",i:[
-["17:00","抵达、入住","建议住鼓楼或龙亭附近,后面几天出行方便"],
-["19:00","逛鼓楼夜市","灌汤包、花生糕、羊肉汤"]]},
-{d:"10.3 周六",s:"包公皇城",h:"包公与皇城线",i:[
-["09:00","开封府","留意包公断案等演出时间"],
-["12:00","附近午饭",""],
-["14:00","开封包公祠","包公湖畔,环境安静"],
-["15:30","龙亭公园","北宋皇宫旧址,登殿俯瞰古城"],
-["17:30","天波杨府","杨家将主题府邸与演绎"],
-["19:00","自由安排 / 再逛夜市",""]]},
-{d:"10.4 周日",s:"古寺古塔",h:"古寺古塔线",i:[
-["09:00","大相国寺","中原名刹,千手千眼观音像"],
-["12:00","午饭",""],
-["14:00","铁塔公园","琉璃砖砌成,色似铁,天下第一塔"],
-["16:00","开封博物馆","室内为主,人多或下雨时很合适"],
-["18:30","书店街 / 鼓楼一带","晚上休息或随意逛"]]},
-{d:"10.5 周一",s:"宋文化",h:"宋文化重头戏",i:[
-["08:30","朱仙镇启封故园","离市区较远,早去早回;岳飞与木版年画"],
-["12:30","午饭后回市区休息",""],
-["15:00","清明上河园","占用时间最长,看完夜场再走"],
-["20:00","清明上河园夜场","散场时间以当天公告为准"]]},
-{d:"10.6 周二",s:"轻松收尾",h:"轻松收尾",i:[
-["09:30","中国翰园碑林","书法碑刻,慢慢逛"],
-["11:30","午饭",""],
-["14:00","行程结束","如赶车,提前 1 到 1.5 小时到站"]]}];
-var KEY="kf-plan-v1",data,cur=0,editing=false;
-function clone(x){return JSON.parse(JSON.stringify(x))}
-try{var s=localStorage.getItem(KEY);data=s?JSON.parse(s):clone(DEF)}catch(e){data=clone(DEF)}
-if(!Array.isArray(data)||!data.length)data=clone(DEF);
-function save(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}}
+var DK="kf-done-v2",TK="kf-todo-v1",CK="kf-cache",data=[],cur=0,done={},UP="",todo=null;
+try{done=JSON.parse(localStorage.getItem(DK)||"{}")||{}}catch(e){done={}}
+function saveD(){try{localStorage.setItem(DK,JSON.stringify(done))}catch(e){}}
+function K(D,it){return D.d+"|"+it[1]}
 function esc(x){return String(x==null?"":x).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
-function toast(m){var t=document.getElementById("toast");t.textContent=m;t.className="toast show";setTimeout(function(){t.className="toast"},1600)}
+function toast(m){var t=document.getElementById("toast");t.textContent=m;t.className="toast show";setTimeout(function(){t.className="toast"},1800)}
+function setData(j){data=j.days;UP=j.updated?"更新于 "+j.updated:"";if(cur>=data.length)cur=0}
+function load(manual){
+ fetch("itinerary.json?t="+Date.now(),{cache:"no-store"}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){
+  if(!j||!Array.isArray(j.days)||!j.days.length)throw 0;
+  setData(j);try{localStorage.setItem(CK,JSON.stringify(j))}catch(e){}
+  render();if(manual)toast("已更新到最新行程");
+ }).catch(function(){
+  if(!data.length)document.getElementById("day").innerHTML='<p class="theme">行程加载失败,请检查网络后点「刷新行程」。</p>';
+  else toast("刷新失败,显示的是上次保存的行程");
+ });
+}
 function render(){
  document.getElementById("tabs").innerHTML=data.map(function(x,k){var p=x.d.split(" ");return '<button role="tab" data-tab="'+k+'" aria-selected="'+(k===cur)+'"><b>'+esc(p[0])+'</b>'+esc(p[1]||x.s)+'</button>'}).join("");
- var D=data[cur],h='<h2>'+esc(D.h)+'</h2><p class="theme">'+esc(D.d)+' · '+esc(D.s)+'</p><ol>';
- D.i.forEach(function(it,k){
-  if(editing){
-   h+='<li data-k="'+k+'"><div class="row"><input class="tin" type="text" data-f="0" value="'+esc(it[0])+'" aria-label="时间"><input type="text" data-f="1" value="'+esc(it[1])+'" aria-label="地点"></div><textarea data-f="2" aria-label="备注" placeholder="备注">'+esc(it[2])+'</textarea><div class="tools"><button data-a="up">上移</button><button data-a="dn">下移</button><button class="del" data-a="del">删除</button></div></li>';
-  }else{
-   h+='<li class="'+(it[3]?"done":"")+'" data-k="'+k+'"><div class="row"><span class="t">'+esc(it[0])+'</span><span class="n">'+esc(it[1])+'</span><input class="chk" type="checkbox" data-a="chk" '+(it[3]?"checked":"")+' aria-label="已完成"></div>'+(it[2]?'<div class="d">'+esc(it[2])+'</div>':"")+'</li>';
-  }
- });
- h+='</ol>';
- if(editing)h+='<button class="add" data-a="add">+ 添加一项</button>';
- document.getElementById("day").innerHTML=h;
- var b=document.getElementById("edit");b.textContent=editing?"完成编辑":"编辑行程";b.className=editing?"on":"";
+ var D=data[cur];
+ if(D){
+  var h='<h2>'+esc(D.h)+'</h2><p class="theme">'+esc(D.d)+' · '+esc(D.s)+(UP?' · '+esc(UP):'')+'</p><ol>';
+  D.i.forEach(function(it,k){var dn=done[K(D,it)];
+   h+='<li class="'+(dn?"done":"")+'" data-k="'+k+'"><div class="row"><span class="t">'+esc(it[0])+'</span><span class="n">'+esc(it[1])+'</span><input class="chk" type="checkbox" data-a="chk" '+(dn?"checked":"")+' aria-label="已完成"></div>'+(it[2]?'<div class="d">'+esc(it[2])+'</div>':"")+'</li>'});
+  document.getElementById("day").innerHTML=h+'</ol>';
+ }
  renderMap();
 }
 document.getElementById("tabs").onclick=function(e){var b=e.target.closest("[data-tab]");if(b){cur=+b.dataset.tab;render()}};
-var day=document.getElementById("day");
-day.onclick=function(e){
+document.getElementById("day").onclick=function(e){
  var a=e.target.closest("[data-a]");if(!a)return;
- var li=a.closest("li"),k=li?+li.dataset.k:-1,L=data[cur].i,act=a.dataset.a;
- if(act==="chk"){L[k][3]=a.checked?1:0}
- else if(act==="add"){L.push(["","新安排",""])}
- else if(act==="del"){if(confirm("删除这一项?"))L.splice(k,1);else return}
- else if(act==="up"&&k>0){var t=L[k];L[k]=L[k-1];L[k-1]=t}
- else if(act==="dn"&&k<L.length-1){var t2=L[k];L[k]=L[k+1];L[k+1]=t2}
- save();render();
+ var li=a.closest("li"),D=data[cur];if(!li||!D)return;
+ var key=K(D,D.i[+li.dataset.k]);
+ if(a.checked)done[key]=1;else delete done[key];
+ saveD();render();
 };
-day.oninput=function(e){
- var f=e.target.dataset.f,li=e.target.closest("li");
- if(f==null||!li)return;
- data[cur].i[+li.dataset.k][+f]=e.target.value;save();
-};
-document.getElementById("edit").onclick=function(){editing=!editing;render();if(!editing)toast("已保存")};
-document.getElementById("reset").onclick=function(){if(confirm("恢复为最初的行程?你的修改会丢失。")){data=clone(DEF);save();render();toast("已恢复")}};
+document.getElementById("refresh").onclick=function(){load(true)};
 document.getElementById("copy").onclick=function(){
  var tx=data.map(function(D){return D.d+" "+D.h+"\n"+D.i.map(function(it){return (it[0]?it[0]+" ":"")+it[1]+(it[2]?"("+it[2]+")":"")}).join("\n")}).join("\n\n");
  try{navigator.clipboard.writeText(tx).then(function(){toast("已复制")},function(){toast("复制失败")})}catch(e){toast("复制失败")}
 };
-
 var PL=[["清明上河园","清明上河园",55,105],["龙亭公园","龙亭",165,92],["天波杨府","天波杨府",120,122],["开封博物馆","开封博物馆",215,128],["开封府","开封府",160,155],["开封包公祠","包公祠",105,168],["大相国寺","大相国寺",200,198],["铁塔公园","铁塔",245,85],["中国翰园碑林","翰园",58,210],["朱仙镇启封故园","朱仙镇",95,335]];
-function matches(key){var r=[];data.forEach(function(D){D.i.forEach(function(it){if(String(it[1]).indexOf(key)>-1)r.push(it)})});return r}
-function isDone(m){return m.length>0&&m.every(function(it){return it[3]})}
+function matches(key){var r=[];data.forEach(function(D){D.i.forEach(function(it){if(String(it[1]).indexOf(key)>-1)r.push(K(D,it))})});return r}
+function isDone(m){return m.length>0&&m.every(function(k){return done[k]})}
 function renderMap(){
  var g="",n=0,pend=[];
  PL.forEach(function(p){var dn=isDone(matches(p[1]));if(dn)n++;else pend.push(p[0]);
@@ -200,12 +167,11 @@ function pinToggle(el){
  var g=el.closest(".pin");if(!g)return;
  var m=matches(g.dataset.p);
  if(!m.length){toast("行程里没有这个景点");return}
- var all=isDone(m);m.forEach(function(it){it[3]=all?0:1});save();render();toast(all?"已改为待打卡":"已打卡")
+ var all=isDone(m);m.forEach(function(k){if(all)delete done[k];else done[k]=1});saveD();render();toast(all?"已改为待打卡":"已打卡");
 }
 var svgEl=document.getElementById("pins");
 svgEl.onclick=function(e){pinToggle(e.target)};
 svgEl.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();pinToggle(e.target)}};
-var TK="kf-todo-v1",todo=null;
 try{var s2=localStorage.getItem(TK);todo=s2?JSON.parse(s2):null}catch(e){todo=null}
 if(!Array.isArray(todo))todo=["预订 10.2–10.6 住宿","预订往返交通","提前订清明上河园门票和夜场","提前订开封府、大相国寺门票","确认热门演出时间表","带身份证、充电宝、雨具","10.6 预留赶车时间"].map(function(t){return{t:t,d:0}});
 function saveT(){try{localStorage.setItem(TK,JSON.stringify(todo))}catch(e){}}
@@ -230,7 +196,8 @@ function show(v){
  if(v==="map")renderMap();if(v==="todo")renderTodo();window.scrollTo(0,0);
 }
 document.getElementById("nav").onclick=function(e){var b=e.target.closest("[data-v]");if(b)show(b.dataset.v)};
-render();
+try{var c0=JSON.parse(localStorage.getItem(CK));if(c0&&Array.isArray(c0.days)&&c0.days.length){setData(c0);render()}}catch(e){}
+load(false);
 </script>
 </body>
 </html>
